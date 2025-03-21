@@ -158,7 +158,7 @@ async def main():
 
             run_config = CrawlerRunConfig(
                 wait_for="css:.nav-user-avatar",  # Wait for avatar logo to appear
-                page_timeout=120000,
+                page_timeout=40000,
                 delay_before_return_html=2.5,
                 cache_mode=CacheMode.BYPASS,
                 # js_only=True, # We're continuing from the open tab
@@ -244,6 +244,7 @@ async def upload_jobs_to_baserow(jobs: List[Dict[str, Any]]):
                 },
                 json=row
             )
+            print(f"{job['job_title']} uploaded")
             # Wait for 1 second before uploading the next row
             await asyncio.sleep(1)
 
