@@ -15,7 +15,7 @@ This document provides detailed instructions on how to use the Upwork Scraper to
 
 ### Prerequisites
 
-- Python 3.8 or higher
+- Python 3.12 or higher
 - pip (Python package installer)
 - Git (optional, for cloning the repository)
 
@@ -64,8 +64,9 @@ The Upwork Scraper requires certain configuration settings to operate correctly.
 2. Edit the `.env` file with your specific values:
    ```
    # Upwork credentials
-   UPWORK_USERNAME=your_username
+   UPWORK_EMAIL=your_email
    UPWORK_PASSWORD=your_password
+   UPWORK_SECURITY_ANSWER=your_security_answer  # Optional, if your account uses security questions
 
    # Baserow configuration
    BASEROW_API_KEY=your_baserow_api_key
@@ -83,13 +84,19 @@ To use the Baserow integration:
    - `job_title` (Text)
    - `job_url` (URL)
    - `posted_time` (Text)
+   - `posted_time_date` (Date/Time)
    - `description` (Long Text)
+   - `location` (Text)
+   - `rating` (Number)
+   - `total_feedback` (Text)
+   - `spent` (Text)
+   - `budget` (Text)
+   - `job_type` (Text)
    - `client_info` (Long Text)
    - `job_details` (Long Text)
    - `skills` (Long Text)
    - `proposals` (Text)
-   - `is_processed` (Boolean, optional)
-   - `score` (Number, optional)
+   - `status` (Text)
 4. Generate an API key from your Baserow account settings
 5. Add the API key and table ID to your `.env` file
 
@@ -105,19 +112,19 @@ python -m upwork_scraper.main [OPTIONS]
 
 ### Examples
 
-1. Scrape web scraping jobs (one page):
+1. Use default queries (recommended):
    ```bash
-   python -m upwork_scraper.main --query "web scraping"
+   python -m upwork_scraper.main
    ```
 
-2. Scrape Python developer jobs (multiple pages):
+2. Specify custom search queries:
    ```bash
-   python -m upwork_scraper.main --query "python developer" --max-pages 3
+   python -m upwork_scraper.main --queries "web scraping" "python developer" "data mining"
    ```
 
 3. Using a specific scraper implementation:
    ```bash
-   python -m upwork_scraper.main --scraper selenium --query "data mining"
+   python -m upwork_scraper.main --scraper selenium --queries "data mining"
    ```
 
 ## Advanced Usage
@@ -126,45 +133,73 @@ python -m upwork_scraper.main [OPTIONS]
 
 The following options are available:
 
-- `--scraper`: Choose between `crawl4ai` (default) or `selenium` implementations
-- `--query`: Search query for jobs (default: "web scraping")
-- `--max-pages`: Maximum number of pages to scrape (default: 1)
-- `--headless`: Run browser in headless mode (flag, default: True)
-- `--no-headless`: Run browser in non-headless mode (opposite of `--headless`)
-- `--days-to-keep`: Number of days to keep jobs in Baserow (default: 30)
+- `--scraper`: Choose between `selenium` (default) or `crawl4ai` implementations
+- `--queries`: One or more search queries for jobs (default: predefined list of relevant queries)
+- `--max-pages`: Maximum number of pages to scrape per query (default: 2)
+- `--headless`: Run browser in headless mode (flag, default: False)
+- `--no-headless`: Run browser in non-headless mode (default behavior)
+- `--days-to-keep`: Number of days to keep jobs in Baserow (default: 365)
+
+### Default Search Queries
+
+The scraper comes with a predefined list of relevant queries:
+```python
+DEFAULT_QUERIES = [
+    "web scraping",
+    "data scraping",
+    "scraping",
+    "ai development",
+    "elevenlabs",
+    "scraping",
+    "ai automation",
+    "n8n",
+    "angularjs",
+    "angular"
+]
+```
 
 ### Examples
 
-1. Non-headless mode (for debugging):
+1. Non-headless mode (default):
    ```bash
-   python -m upwork_scraper.main --no-headless --query "web development" --max-pages 1
+   python -m upwork_scraper.main --queries "web development" --max-pages 3
    ```
 
-2. Keep jobs for a longer period:
+2. Headless mode with custom retention period:
    ```bash
-   python -m upwork_scraper.main --query "machine learning" --days-to-keep 60
+   python -m upwork_scraper.main --headless --days-to-keep 180
    ```
 
 3. Using as a module in your own script:
    ```python
    import asyncio
-   from upwork_scraper.scrapers import JobsScraperCrawl4ai
+   from upwork_scraper.scrapers import JobsScraperSelenium
+   from upwork_scraper.data.baserow import BaserowService
 
    async def my_custom_scraper():
-       scraper = JobsScraperCrawl4ai(
+       # Initialize scraper
+       scraper = JobsScraperSelenium(
            cookies_file="upwork_cookies_selenium.json",
            output_dir="my_jobs",
-           headless=True,
+           headless=False,
            verbose=True
        )
-       
+
+       # Scrape jobs
        jobs = await scraper.scrape_jobs(
            query="data science",
            max_pages=2
        )
-       
-       print(f"Found {len(jobs)} jobs")
-       return jobs
+
+       # Upload to Baserow
+       if jobs:
+           baserow = BaserowService()
+           created_rows = await baserow.upload_multiple_rows(
+               jobs,
+               deduplicate=True,
+               deduplication_field="job_uid"
+           )
+           print(f"Uploaded {len(created_rows)} new jobs to Baserow")
 
    # Run the async function
    if __name__ == "__main__":
@@ -180,16 +215,30 @@ Each scraped job contains the following information:
 - `job_uid`: Unique identifier for the job
 - `job_title`: Title of the job posting
 - `job_url`: URL to the job posting
-- `posted_time`: When the job was posted
+- `posted_time`: When the job was posted (relative time)
+- `posted_time_date`: Parsed UTC datetime of posting
 - `description`: Job description text
-- `client_info`: Information about the client (payment verification, rating, etc.)
-- `job_details`: Details like job type, budget, and duration
-- `skills`: Required skills for the job
+- `location`: Client's location
+- `rating`: Client's rating (with 2 decimal points)
+- `total_feedback`: Number of client reviews
+- `spent`: Amount spent by client
+- `budget`: Job budget
+- `job_type`: Type of job (hourly/fixed)
+- `client_info`: Full client information as JSON string
+- `job_details`: Job details as JSON string
+- `skills`: Required skills as JSON array
 - `proposals`: Number of proposals submitted
+- `status`: Job status (scraped/low_rating)
+
+### Status Values
+
+- `scraped`: Default status for newly scraped jobs
+- `low_rating`: Applied to jobs where client rating is < 4.0
+
 
 ### Output Files
-
-Jobs are saved to the specified output directory (default: `jobs/`) in JSON format. Each file is named with a timestamp for easy tracking.
+Jobs are saved to the specified output directory (default: `jobs/`) in JSON format. Each file is named with a timestamp
+for easy tracking.
 
 Example:
 ```
@@ -202,8 +251,8 @@ jobs/extracted_jobs_20230321_120000.json
 
 1. **Authentication Failures**:
    - Ensure your Upwork credentials are correct
-   - Check if you need to solve a CAPTCHA by running in non-headless mode
-   - Try manually logging in with a browser and exporting cookies
+   - Check if you need to provide a security answer in `.env`
+   - Try running in non-headless mode to see the login process
 
 2. **Scraping Errors**:
    - Upwork might block automated access; try reducing scraping frequency
@@ -213,7 +262,7 @@ jobs/extracted_jobs_20230321_120000.json
 3. **Baserow Integration Issues**:
    - Verify your API key and table ID
    - Ensure your table structure matches the expected fields
-   - Check Baserow's API status
+   - Check Baserow's API status and rate limits
 
 ### Debugging
 
@@ -234,4 +283,4 @@ If you encounter issues not covered here, please open an issue on the GitHub rep
 - A description of the problem
 - Steps to reproduce
 - Relevant logs (with sensitive information redacted)
-- Your environment details (OS, Python version, etc.) 
+- Your environment details (OS, Python version, etc.)

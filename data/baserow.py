@@ -21,7 +21,7 @@ from utils.helpers import load_json_file, save_json_file, is_file_older_than
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format="%(asctime)s - %(levelname)s - %(message)s ||| <%(name)s>",
 )
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ class BaserowService:
         self.base_url = base_url or "https://api.baserow.io/api/database/rows/table"
         self.max_retries = max_retries
         self.retry_delay = retry_delay
-        
+
         logger.info("BaserowService initialized")
 
     def _get_headers(self) -> Dict[str, str]:
@@ -154,7 +154,7 @@ class BaserowService:
         table_id: Optional[str] = None,
         filters: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
-        """Get all rows from the specified table.
+        """Get all rows from the specified table, handling pagination.
 
         Args:
             table_id: The Baserow table ID. If None, uses the instance's table ID.
@@ -165,10 +165,39 @@ class BaserowService:
         """
         url = self._get_url(table_id)
         headers = self._get_headers()
+        all_rows = []
+        page = 1
+        size = 100  # Baserow default page size
 
         try:
-            response = await self._request_with_retry("GET", url, headers, params=filters)
-            return response.json()["results"]
+            while True:
+                # Add pagination parameters to filters
+                page_filters = filters.copy() if filters else {}
+                page_filters.update({
+                    'page': page,
+                    'size': size
+                })
+
+                response = await self._request_with_retry("GET", url, headers, params=page_filters)
+                data = response.json()
+
+                results = data.get('results', [])
+                if not results:
+                    break
+
+                all_rows.extend(results)
+
+                # Check if there are more pages
+                if not data.get('next'):
+                    break
+
+                page += 1
+                # Add a small delay to prevent rate limiting
+                await asyncio.sleep(0.5)
+
+            logger.info(f"Retrieved {len(all_rows)} rows in total")
+            return all_rows
+
         except Exception as e:
             logger.error(f"Error getting rows: {str(e)}")
             return []
@@ -313,9 +342,24 @@ class BaserowService:
             try:
                 # Check for duplicates if needed
                 if deduplicate and existing_rows:
-                    if any(existing_row.get(deduplication_field) == row.get(deduplication_field)
-                          for existing_row in existing_rows):
-                        logger.info(f"Skipping duplicate row: {row.get('job_title', 'No title')}")
+                    is_duplicate = False
+                    for existing_row in existing_rows:
+                        try:
+                            existing_value = int(existing_row.get(deduplication_field, 0))
+                            new_value = int(row.get(deduplication_field, 0))
+                            if existing_value == new_value:
+                                logger.info(f"Skipping duplicate row with {deduplication_field}: {new_value}")
+                                is_duplicate = True
+                                break
+                        except (ValueError, TypeError) as e:
+                            logger.warning(f"Error comparing {deduplication_field} values: {e}")
+                            # Fall back to string comparison
+                            if str(existing_row.get(deduplication_field)) == str(row.get(deduplication_field)):
+                                logger.info(f"Skipping duplicate row (string comparison) with {deduplication_field}: {row.get(deduplication_field)}")
+                                is_duplicate = True
+                                break
+
+                    if is_duplicate:
                         continue
 
                 # Handle nested data (convert to string)
