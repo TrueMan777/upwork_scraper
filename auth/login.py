@@ -17,8 +17,9 @@ from dotenv import load_dotenv
 
 from utils.helpers import is_file_older_than, load_json_file, save_json_file
 
-# Set up logger
+# Set up logger with a more detailed format
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 # Load environment variables
 load_dotenv()
@@ -44,7 +45,7 @@ class UpworkAuthenticator:
         self.cookie_max_age_days = cookie_max_age_days
         self.headless = headless
         self.cookies = None
-        logger.info(f"Initialized UpworkAuthenticator with cookies file: {cookies_file}")
+        logger.debug(f"Initialized UpworkAuthenticator with cookies file: {cookies_file}")
 
     async def login_if_needed(self) -> bool:
         """Perform login only if cookies don't exist, are expired, or are invalid.
@@ -53,7 +54,7 @@ class UpworkAuthenticator:
             True if login was performed, False if existing cookies were used.
         """
         if self._are_cookies_valid():
-            logger.info("Using existing valid cookies")
+            logger.debug("Using existing valid cookies")
             self.cookies = load_json_file(self.cookies_file, [])
             return False
 
@@ -69,12 +70,12 @@ class UpworkAuthenticator:
         """
         # Check if file exists
         if not os.path.exists(self.cookies_file):
-            logger.info(f"Cookies file not found: {self.cookies_file}")
+            logger.debug(f"Cookies file not found: {self.cookies_file}")
             return False
 
         # Check if file is too old
         if is_file_older_than(self.cookies_file, self.cookie_max_age_days):
-            logger.info(f"Cookies are older than {self.cookie_max_age_days} days")
+            logger.debug(f"Cookies are older than {self.cookie_max_age_days} days")
             return False
 
         # Validate cookie contents
@@ -97,10 +98,10 @@ class UpworkAuthenticator:
             now_timestamp = datetime.now().timestamp()
             for cookie in cookies:
                 if "expiry" in cookie and cookie["expiry"] < now_timestamp:
-                    logger.info("At least one cookie has expired")
+                    logger.debug("At least one cookie has expired")
                     return False
 
-            logger.info("Cookies exist and appear to be valid")
+            logger.debug("Cookies exist and appear to be valid")
             return True
 
         except Exception as e:
@@ -115,17 +116,40 @@ class UpworkAuthenticator:
         options.headless = self.headless
         options.stealth = True
 
-        # Add arguments to handle network issues better
+        # Add arguments to handle network issues better and reduce noise
         options.add_arguments(
+            # Basic setup
             "--disable-auto-reload",
             "--disable-background-networking",
             "--no-first-run",
             "--disable-infobars",
             "--homepage=about:blank",
+            # "--log-level=3",  # Reduce Chrome logging
+            # "--silent",
+
+            # SSL/Security settings
+            # "--ignore-certificate-errors",
+            # "--ignore-ssl-errors",
+            # "--ignore-certificate-errors-spki-list",
+            # "--allow-insecure-localhost",
+
+            # Graphics/GPU settings
+            "--disable-gpu",
+            "--disable-software-rasterizer",
+            "--disable-dev-shm-usage",  # Overcome limited resource problems
+
+            # Memory/Performance settings
+            # "--disable-extensions",
+            # "--disable-default-apps",
+
+            # Network settings
+            # "--dns-prefetch-disable",  # Disable DNS prefetching
+            # "--no-proxy-server",  # Don't use system proxy
+            # "--disable-web-security",  # Disable web security for login process
         )
 
         try:
-            async with Chrome(options=options, debug=True, timeout=30) as driver:
+            async with Chrome(options=options, debug=False, timeout=60) as driver:
                 # Navigate to login page
                 logger.info("Navigating to Upwork login page")
                 await driver.get("https://www.upwork.com/ab/account-security/login", timeout=90, wait_load=False)
@@ -170,6 +194,7 @@ class UpworkAuthenticator:
                         if not security_answer:
                             raise ValueError("UPWORK_SECURITY_ANSWER environment variable must be set")
 
+                        await asyncio.sleep(5)
                         # Enter security answer
                         await security_answer_field.send_keys(security_answer)
                         await asyncio.sleep(2)
@@ -179,7 +204,7 @@ class UpworkAuthenticator:
                         await submit_button.click()
                         await asyncio.sleep(2)
                 except Exception as e:
-                    logger.info(f"No security answer field found or error processing it: {e}")
+                    logger.debug(f"No security answer field found or error processing it: {e}")
 
                 # Wait for login to complete
                 await asyncio.sleep(10)
@@ -197,7 +222,6 @@ class UpworkAuthenticator:
 
                 # Validate login success
                 try:
-                    # Fix: Use await for current_url since it might be an async property
                     current_url = await driver.current_url
                     if "find-work" in current_url or "my-jobs" in current_url:
                         logger.info("Login successful, verified by URL")
@@ -205,7 +229,6 @@ class UpworkAuthenticator:
                         logger.warning(f"Login may have failed. Current URL: {current_url}")
                 except Exception as e:
                     logger.warning(f"Could not verify login success via URL: {e}")
-                    # Continue anyway since we have cookies
 
         except Exception as e:
             logger.error(f"Error during login process: {e}")
@@ -222,29 +245,9 @@ class UpworkAuthenticator:
         return self.cookies
 
 
-# Example usage
-async def example_usage():
-    """Example of how to use the UpworkAuthenticator."""
-    authenticator = UpworkAuthenticator()
-
-    # This will only perform login if needed
-    login_performed = await authenticator.login_if_needed()
-
-    if login_performed:
-        print("Login was performed because cookies were invalid or expired")
-    else:
-        print("Used existing valid cookies")
-
-    cookies = authenticator.get_cookies()
-    print(f"Number of cookies: {len(cookies)}")
-
-
-if __name__ == "__main__":
-    # Configure logging
+# Configure logging if it hasn't been configured yet
+if not logging.getLogger().handlers:
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        format="%(asctime)s - %(levelname)s - %(message)s ||| <%(name)s>",
     )
-
-    # Run the example
-    asyncio.run(example_usage())

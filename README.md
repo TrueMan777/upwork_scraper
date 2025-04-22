@@ -53,7 +53,7 @@ BASEROW_TABLE_ID=your_baserow_table_id
 ### Basic Usage
 
 ```bash
-python -m upwork_scraper.main --query "web scraping" --max-pages 2
+python main.py --scraper selenium --queries "web scraping" --max-pages 1 --headless
 ```
 
 ### Advanced Options
