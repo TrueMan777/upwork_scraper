@@ -52,7 +52,6 @@ Configure your "Jobs" table with the following fields:
 | job_details    | Long text     | JSON string with job details                |
 | skills         | Long text     | JSON array of required skills               |
 | proposals      | Text          | Number of proposals submitted               |
-| is_processed   | Boolean       | Whether the job has been processed          |
 | score          | Number        | Job relevance score (optional)              |
 
 You can add additional fields as needed for your specific use case.

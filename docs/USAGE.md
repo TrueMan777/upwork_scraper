@@ -88,7 +88,6 @@ To use the Baserow integration:
    - `job_details` (Long Text)
    - `skills` (Long Text)
    - `proposals` (Text)
-   - `is_processed` (Boolean, optional)
    - `score` (Number, optional)
 4. Generate an API key from your Baserow account settings
 5. Add the API key and table ID to your `.env` file
@@ -157,12 +156,12 @@ The following options are available:
            headless=True,
            verbose=True
        )
-       
+
        jobs = await scraper.scrape_jobs(
            query="data science",
            max_pages=2
        )
-       
+
        print(f"Found {len(jobs)} jobs")
        return jobs
 
@@ -234,4 +233,4 @@ If you encounter issues not covered here, please open an issue on the GitHub rep
 - A description of the problem
 - Steps to reproduce
 - Relevant logs (with sensitive information redacted)
-- Your environment details (OS, Python version, etc.) 
+- Your environment details (OS, Python version, etc.)

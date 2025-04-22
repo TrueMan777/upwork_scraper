@@ -18,14 +18,10 @@ from bs4 import BeautifulSoup
 import re
 
 # Import the helper function
-from upwork_scraper.utils.helpers import save_jobs_to_file
+from upwork_scraper.utils.helpers import save_jobs_to_file, setup_logging
 
 # Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger(__name__)
+logger = setup_logging(log_level="INFO")
 
 
 class JobsScraperSelenium:

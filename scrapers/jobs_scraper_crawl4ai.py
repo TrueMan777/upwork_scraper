@@ -22,7 +22,7 @@ from upwork_scraper.utils.helpers import save_jobs_to_file
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format="%(asctime)s - %(levelname)s - %(message)s ||| <%(name)s>",
 )
 logger = logging.getLogger(__name__)
 
