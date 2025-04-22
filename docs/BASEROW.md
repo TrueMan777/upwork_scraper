@@ -41,20 +41,25 @@ After logging in:
 
 Configure your "Jobs" table with the following fields:
 
-| Field Name     | Field Type    | Description                                 |
-|----------------|---------------|---------------------------------------------|
-| job_uid        | Text          | Unique identifier for the job               |
-| job_title      | Text          | Title of the job posting                    |
-| job_url        | URL           | Direct link to the job posting              |
-| posted_time    | Text          | When the job was posted                     |
-| description    | Long text     | Full job description                        |
-| client_info    | Long text     | JSON string with client information         |
-| job_details    | Long text     | JSON string with job details                |
-| skills         | Long text     | JSON array of required skills               |
-| proposals      | Text          | Number of proposals submitted               |
-| score          | Number        | Job relevance score (optional)              |
-
-You can add additional fields as needed for your specific use case.
+| Field Name        | Field Type    | Description                                 |
+|------------------|---------------|---------------------------------------------|
+| job_uid          | Text          | Unique identifier for the job               |
+| job_title        | Text          | Title of the job posting                    |
+| job_url          | URL           | Direct link to the job posting              |
+| posted_time      | Text          | When the job was posted (relative time)     |
+| posted_time_date | Date/Time     | Parsed UTC datetime of posting              |
+| description      | Long text     | Full job description                        |
+| location         | Text          | Client's location                           |
+| rating           | Number        | Client's rating (with 2 decimal points)     |
+| total_feedback   | Text          | Number of client reviews                    |
+| spent            | Text          | Amount spent by client                      |
+| budget           | Text          | Job budget                                  |
+| job_type         | Text          | Type of job (hourly/fixed)                 |
+| client_info      | Long text     | JSON string with client information         |
+| job_details      | Long text     | JSON string with job details                |
+| skills           | Long text     | JSON array of required skills               |
+| proposals        | Text          | Number of proposals submitted               |
+| status           | Text          | Job status (scraped/low_rating)            |
 
 ## API Key Generation
 
@@ -91,13 +96,14 @@ BASEROW_TABLE_ID=your_table_id_here
 
 The Upwork Scraper integrates with Baserow through the `BaserowService` class, which provides several useful methods:
 
-### Getting All Rows
+### Getting All Rows (with Pagination)
 
 ```python
 from upwork_scraper.data.baserow import BaserowService
 
 async def get_all_jobs():
     baserow = BaserowService()
+    # Will automatically handle pagination (100 rows per page)
     rows = await baserow.get_all_rows()
     return rows
 ```
@@ -118,7 +124,7 @@ async def upload_jobs(jobs):
 ### Cleaning Up Old Jobs
 
 ```python
-async def cleanup_old_jobs(days=30):
+async def cleanup_old_jobs(days=365):  # Default is now 365 days
     baserow = BaserowService()
     deleted_count = await baserow.clean_up_old_rows(days=days)
     return deleted_count
@@ -139,8 +145,14 @@ async def cleanup_old_jobs(days=30):
    - Ensure the table ID is correct
 
 3. **Rate Limiting**:
-   - Baserow may have rate limits depending on your plan
-   - Add appropriate delays between requests if necessary
+   - Baserow has a default page size of 100 rows
+   - The service automatically handles pagination with delays
+   - If you're experiencing rate limits, the service will retry with exponential backoff
+
+4. **Data Processing**:
+   - Job ratings are stored with 2 decimal points
+   - Posted times are stored both as relative time and parsed UTC datetime
+   - Status field indicates 'low_rating' for clients with rating < 4.0
 
 ### Debugging Tips
 
@@ -148,7 +160,8 @@ When troubleshooting Baserow integration issues:
 
 1. Check the response status and body from Baserow API calls
 2. Verify the data format being sent matches Baserow expectations
-3. Try manual API requests using tools like curl or Postman
+3. Monitor the logs for pagination information and row counts
+4. Try manual API requests using tools like curl or Postman
 
 ### API Documentation
 

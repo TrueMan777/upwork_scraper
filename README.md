@@ -61,8 +61,8 @@ python main.py --scraper selenium --queries "web scraping" --max-pages 1 --headl
 ```bash
 python -m upwork_scraper.main \
   --scraper selenium \  # Choose between 'crawl4ai' or 'selenium'
-  --query "python developer" \
-  --max-pages 5 \
+  --queries "web scraping" "data scraping" "automation" \
+  --max-pages 1 \
   --headless \  # Run in headless mode
   --days-to-keep 30  # Keep jobs in Baserow for 30 days
 ```

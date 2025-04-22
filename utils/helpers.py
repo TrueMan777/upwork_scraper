@@ -9,13 +9,13 @@ import json
 import logging
 from datetime import datetime, timedelta
 import pytz
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 
 # Set up logging
 def setup_logging(
     log_level: str = "INFO",
     log_file: Optional[str] = None,
-    log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    log_format: str = "%(asctime)s - %(levelname)s - %(message)s ||| <%(name)s>"
 ):
     """Set up logging for the application.
 
@@ -244,3 +244,66 @@ def save_jobs_to_file(jobs: List[Dict[str, Any]], output_dir: str, suffix: str =
         logging.error(f"Failed to save jobs to {filename}")
 
     return filename
+
+
+def parse_relative_time(time_str: str, reference_time: Optional[datetime] = None) -> Tuple[datetime, bool]:
+    """Parse a relative time string (e.g., '2 hours ago', '1 day ago') into a UTC datetime object.
+
+    Args:
+        time_str: A string describing a relative time (e.g., '2 hours ago', '57 minutes ago')
+        reference_time: The reference time to calculate from (defaults to current UTC time)
+
+    Returns:
+        A tuple of (UTC datetime object, bool) where the bool indicates success
+    """
+    if reference_time is None:
+        reference_time = datetime.now(pytz.UTC)
+    elif reference_time.tzinfo is None:
+        # If reference_time is naive, assume it's UTC and make it aware
+        reference_time = pytz.UTC.localize(reference_time)
+
+    if time_str == "yesterday":
+        result = reference_time - timedelta(days=1)
+        return result, True
+    elif time_str == "last week":
+        result = reference_time - timedelta(weeks=1)
+        return result, True
+    elif time_str == "last month":
+        result = reference_time - timedelta(days=30)
+        return result, True
+    elif time_str == "last year":
+        result = reference_time - timedelta(days=365)
+        return result, True
+
+    # Extract number and unit from the string
+    parts = time_str.split()
+    if len(parts) >= 3 and parts[-1] == "ago":
+        try:
+            number = int(parts[0])
+            unit = parts[1]
+
+            if unit in ["hour", "hours"]:
+                result = reference_time - timedelta(hours=number)
+            elif unit in ["minute", "minutes"]:
+                result = reference_time - timedelta(minutes=number)
+            elif unit in ["day", "days"]:
+                result = reference_time - timedelta(days=number)
+            elif unit in ["week", "weeks"]:
+                result = reference_time - timedelta(weeks=number)
+            elif unit in ["month", "months"]:
+                # Approximate a month as 30 days
+                result = reference_time - timedelta(days=number * 30)
+            elif unit in ["year", "years"]:
+                result = reference_time - timedelta(days=number * 365)
+            else:
+                logging.warning(f"Unknown time unit in: {time_str}")
+                return reference_time, False
+
+            return result, True
+
+        except ValueError as e:
+            logging.error(f"Error parsing relative time '{time_str}': {e}")
+            return reference_time, False
+    else:
+        logging.warning(f"Unexpected relative time format: {time_str}")
+        return reference_time, False

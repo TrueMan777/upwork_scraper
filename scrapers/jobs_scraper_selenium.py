@@ -134,7 +134,10 @@ class JobsScraperSelenium:
         query: str,
         max_pages: int = 1,
         sort_by: str = "recency",
-        client_hires_filter: str = "1-9,10-"
+        client_hires_filter: str = "1-9,10-",
+        proposals: str = "0-4,5-9,10-14",
+        location: str = "Australia%2520and%2520New%2520Zealand,Hong%2520Kong,Israel,Saudi%2520Arabia,Japan,Macao,Malaysia,Singapore,South%2520Korea,Thailand",
+        payment_verified: str = "1",
     ) -> List[Dict[str, Any]]:
         """Scrape job listings from Upwork.
 
@@ -143,6 +146,9 @@ class JobsScraperSelenium:
             max_pages: Maximum number of pages to scrape.
             sort_by: Sort order for results (e.g., "recency").
             client_hires_filter: Filter for client hires.
+            proposals: Filter for proposals.
+            location: Filter for location.
+            payment_verified: Filter for payment verified.
 
         Returns:
             List of job data dictionaries.
@@ -164,7 +170,7 @@ class JobsScraperSelenium:
                 for page in range(1, max_pages + 1):
                     # Build URL for the page
                     encoded_query = quote_plus(query)
-                    url = f"https://www.upwork.com/nx/search/jobs/?q={encoded_query}&sort={sort_by}&page={page}&client_hires={client_hires_filter}"
+                    url = f"https://www.upwork.com/nx/search/jobs/?q={encoded_query}&sort={sort_by}&page={page}&client_hires={client_hires_filter}&proposals={proposals}&location={location}&payment_verified={payment_verified}"
                     logger.info(f"Scraping page {page} with URL: {url}")
 
                     # Navigate to the URL
@@ -191,11 +197,26 @@ class JobsScraperSelenium:
                     # Make sure the page is fully loaded
                     await asyncio.sleep(3)
 
+                    if self.verbose:
+                        # Save HTML for debugging
+                        html = await driver.page_source
+                        debug_file = f'{self.output_dir}/debug_page_{page}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.html'
+                        with open(debug_file, 'w') as f:
+                            f.write(html)
+                        logger.info(f"Saved debug HTML to {debug_file}")
+                        # Take screenshot
+                        screenshot_file = f'{self.output_dir}/screenshot_page_{page}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png'
+                        await driver.get_screenshot_as_file(screenshot_file)
+                        logger.info(f"Saved screenshot to {screenshot_file}")
+
                     # Get page source and parse jobs
                     html = await driver.page_source
                     jobs = await self._parse_jobs(html)
 
                     logger.info(f"Extracted {len(jobs)} job entries from page {page}")
+                    if len(jobs) > 0 and jobs[0].get("client_info", {}).get("location", "") == "":
+                        logger.warning(f"No location found for job {jobs[0].get('job_title')}")
+                        logger.warning(f"Job data: {jobs[0]}")
 
                     # Save page results to file for inspection
                     if jobs:
@@ -376,6 +397,8 @@ class JobsScraperSelenium:
                         location_element = client_info_element.select_one('li[data-test="location"] div.air3-badge-tagline')
                         if location_element:
                             client_info["location"] = _clean_text(location_element)
+                    else:
+                        logger.warning(f"No client info found for job {job_data.get('job_title')}")
 
                     job_data["client_info"] = client_info
 
