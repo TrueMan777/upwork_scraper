@@ -232,6 +232,9 @@ async def main():
         else:
             logger.warning("No jobs found for any query")
 
+        # Find similar jobs and update status
+        await baserow_service.find_similar_jobs(update_status=True)
+
         logger.info("Upwork Scraper completed successfully")
 
     except Exception as e:

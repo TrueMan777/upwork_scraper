@@ -7,16 +7,12 @@ updating, and deleting rows with proper error handling and retries.
 """
 
 import os
-import json
 import asyncio
 import logging
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 import requests
 from dotenv import load_dotenv
-
-# Import helpers from utils
-from utils.helpers import load_json_file, save_json_file, is_file_older_than
 
 # Set up logging
 logging.basicConfig(
@@ -442,4 +438,165 @@ class BaserowService:
 
         except Exception as e:
             logger.error(f"Error cleaning up old rows: {str(e)}")
+            return 0
+
+    async def find_duplicates(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Find duplicate jobs in the database based on job_uid.
+
+        This method retrieves all rows and groups them by job_uid to identify duplicates.
+        A job is considered a duplicate if its job_uid appears more than once.
+
+        Returns:
+            A dictionary where:
+            - key: job_uid that has duplicates
+            - value: list of duplicate row data for that job_uid
+        """
+        try:
+            # Get all rows from the database
+            all_rows = await self.get_all_rows()
+
+            # Group rows by job_uid
+            job_uid_groups: Dict[str, List[Dict[str, Any]]] = {}
+            for row in all_rows:
+                job_uid = str(row.get('job_uid', ''))  # Convert to string for consistency
+                if not job_uid:
+                    continue
+
+                if job_uid in job_uid_groups:
+                    job_uid_groups[job_uid].append(row)
+                else:
+                    job_uid_groups[job_uid] = [row]
+
+            # Filter for only the groups that have duplicates
+            duplicates = {
+                job_uid: rows
+                for job_uid, rows in job_uid_groups.items()
+                if len(rows) > 1
+            }
+
+            if duplicates:
+                logger.info(f"Found {len(duplicates)} job_uids with duplicates")
+                for job_uid, rows in duplicates.items():
+                    logger.info(f"job_uid {job_uid} has {len(rows)} duplicate entries")
+            else:
+                logger.info("No duplicates found")
+
+            return duplicates
+
+        except Exception as e:
+            logger.error(f"Error finding duplicates: {str(e)}")
+            return {}
+
+    async def find_similar_jobs(self, update_status: bool = False) -> Dict[str, List[Dict[str, Any]]]:
+        """Find jobs that have the same title, location, and skills.
+
+        This method retrieves all rows and groups them by a composite key of
+        title + location + skills to identify similar jobs that might be duplicates
+        even if they have different job_uids.
+
+        Returns:
+            A dictionary where:
+            - key: A composite key of title + location + skills
+            - value: list of similar job entries
+        """
+        try:
+            # Get all rows from the database
+            all_rows = await self.get_all_rows()
+
+            # Group rows by composite key
+            similar_groups: Dict[str, List[Dict[str, Any]]] = {}
+
+            for row in all_rows:
+                # Get the relevant fields
+                title = str(row.get('job_title', '')).strip().lower()
+                location = str(row.get('location', '')).strip().lower()
+                skills = str(row.get('skills', '[]')).strip().lower()  # Skills are stored as string
+
+                if not title:  # Skip rows without a title
+                    continue
+
+                # Create a composite key
+                composite_key = f"{title}|{location}|{skills}"
+
+                if composite_key in similar_groups:
+                    similar_groups[composite_key].append(row)
+                else:
+                    similar_groups[composite_key] = [row]
+
+            # Filter for only the groups that have duplicates
+            similar_jobs = {
+                key: rows
+                for key, rows in similar_groups.items()
+                if len(rows) > 1
+            }
+
+            if similar_jobs:
+                logger.info(f"Found {len(similar_jobs)} groups of similar jobs:")
+                for key, rows in similar_jobs.items():
+                    title = rows[0].get('job_title', 'N/A')
+                    location = rows[0].get('location', 'N/A')
+                    logger.info(
+                        f"\nSimilar jobs found:"
+                        f"\n  Title: {title}"
+                        f"\n  Location: {location}"
+                        f"\n  Count: {len(rows)}"
+                    )
+                    if update_status:
+                        for row in rows:
+                            await self.update_row(row.get('id'), {'status': 'duplicate'})
+            else:
+                logger.info("No similar jobs found")
+
+            return similar_jobs
+
+        except Exception as e:
+            logger.error(f"Error finding similar jobs: {str(e)}")
+            return {}
+
+    async def delete_duplicates(self, keep_newest: bool = True) -> int:
+        """Delete duplicate jobs, keeping either the newest or oldest entry.
+
+        Args:
+            keep_newest: If True, keeps the newest entry for each duplicate set.
+                       If False, keeps the oldest entry.
+
+        Returns:
+            Number of rows deleted.
+        """
+        try:
+            duplicates = await self.find_duplicates()
+            if not duplicates:
+                return 0
+
+            deleted_count = 0
+            for job_uid, rows in duplicates.items():
+                # Sort rows by posted_time_date if available, otherwise by ID
+                sorted_rows = sorted(
+                    rows,
+                    key=lambda x: (
+                        x.get('posted_time_date', ''),
+                        x.get('id', 0)
+                    ),
+                    reverse=keep_newest
+                )
+
+                # Keep the first row (newest or oldest based on keep_newest)
+                rows_to_delete = sorted_rows[1:]
+
+                # Delete duplicate rows
+                for row in rows_to_delete:
+                    row_id = row.get('id')
+                    if row_id:
+                        success = await self.delete_row(str(row_id))
+                        if success:
+                            deleted_count += 1
+                            logger.info(f"Deleted duplicate row {row_id} for job_uid {job_uid}")
+                        else:
+                            logger.warning(f"Failed to delete duplicate row {row_id} for job_uid {job_uid}")
+
+            logger.info(f"Deleted {deleted_count} duplicate rows")
+            return deleted_count
+
+        except Exception as e:
+            logger.error(f"Error deleting duplicates: {str(e)}")
             return 0
